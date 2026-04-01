@@ -556,13 +556,13 @@ onAuthStateChanged(auth,async user=>{
   // Check if email is authorized
   document.getElementById('login-loading').style.display='block';
   try{
-    const authDoc=await getDoc(doc(db,'authorized_users',user.email));
+    const authDoc=await getDoc(doc(db,'usuarios_autorizados',user.email));
     if(!authDoc.exists()){
       await signOut(auth);
       showLoginErr(`El correo ${user.email} no tiene acceso autorizado. Contacta al administrador.`);
       return;
     }
-    const role=authDoc.data().role||'analista';
+    const role=(authDoc.data().Rol||authDoc.data().role||'analista').toLowerCase();
     currentUser=user.displayName||user.email;
     currentRole=role;
     // Match analyst by email or display name
