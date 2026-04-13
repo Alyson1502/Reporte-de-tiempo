@@ -209,6 +209,7 @@ select:focus,input:focus{outline:none;border-color:var(--blue)}
 .cal-cell{min-height:52px;border-radius:6px;padding:4px 6px;background:var(--surface2)}
 .cal-cell.today-cell{border:1.5px solid var(--blue)}
 .cal-cell.other-month{opacity:.35}
+.cal-cell-clickable:hover{opacity:.75;transform:scale(1.03);transition:all .15s}
 .cal-num{font-size:11px;color:var(--text2);margin-bottom:2px}
 .cal-bar{height:6px;border-radius:3px;margin-bottom:2px}
 .cal-mins{font-size:10px;color:var(--text3)}
@@ -893,11 +894,32 @@ function renderCharts(entries){
   if(pieChart)pieChart.destroy();
   pieChart=new Chart(document.getElementById('pieChart'),{type:'doughnut',data:{labels,datasets:[{data:vals,backgroundColor:colors,borderWidth:2,borderColor:'#ffffff'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.label+': '+minsToHM(ctx.raw)}}}}});
   if(barChart)barChart.destroy();
-  const byDesc={},colorOf={};
-  entries.forEach(e=>{const k=e.desc.length>22?e.desc.slice(0,22)+'…':e.desc;byDesc[k]=(byDesc[k]||0)+e.mins;colorOf[k]=CAT[e.cat].color;});
+  const byDesc={},colorOf={},fullDesc={};
+  entries.forEach(e=>{
+    const k=e.desc.length>22?e.desc.slice(0,22)+'…':e.desc;
+    byDesc[k]=(byDesc[k]||0)+e.mins;
+    colorOf[k]=CAT[e.cat].color;
+    fullDesc[k]=e.desc; // store full description for tooltip
+  });
   const bL=Object.keys(byDesc),bV=Object.values(byDesc);
   document.getElementById('bar-wrap').style.height=Math.max(200,bL.length*38+60)+'px';
-  barChart=new Chart(document.getElementById('barChart'),{type:'bar',data:{labels:bL,datasets:[{data:bV,backgroundColor:bL.map(l=>colorOf[l]),borderRadius:4,borderSkipped:false}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>minsToHM(ctx.raw)}}},scales:{x:{ticks:{callback:v=>minsToHM(v),font:{size:11}},grid:{color:'rgba(128,128,128,0.1)'}},y:{ticks:{font:{size:11}}}}}});
+  barChart=new Chart(document.getElementById('barChart'),{
+    type:'bar',
+    data:{labels:bL,datasets:[{data:bV,backgroundColor:bL.map(l=>colorOf[l]),borderRadius:4,borderSkipped:false}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+      plugins:{
+        legend:{display:false},
+        tooltip:{callbacks:{
+          title:ctx=>fullDesc[ctx[0].label]||ctx[0].label,
+          label:ctx=>minsToHM(ctx.raw)
+        }}
+      },
+      scales:{
+        x:{ticks:{callback:v=>minsToHM(v),font:{size:11}},grid:{color:'rgba(128,128,128,0.1)'}},
+        y:{ticks:{font:{size:11}}}
+      }
+    }
+  });
 }
 
 function renderCargaBarra(entries){
@@ -930,19 +952,41 @@ function renderPeriodViz(entries){
     entries.forEach(e=>{if(byDay[e.date]!==undefined)byDay[e.date]+=e.mins;});
     box.innerHTML=`<div class="week-grid">${days.map(d=>{const mins=byDay[d]||0,dd=parseDate(d),isT=d===today(),color=mins>480?'#E24B4A':mins>360?'#BA7517':mins>0?'#378ADD':'';return`<div class="week-day"><div class="wday-lbl" style="${isT?'color:var(--blue);font-weight:500':''}">${DAYS[dd.getDay()]}<br>${dd.getDate()}</div><div class="wday-cell" style="background:${color||'var(--surface2)'};opacity:${mins?1:.4}"><span style="color:${mins?'#fff':'var(--text3)'}">${mins?minsToHM(mins):''}</span></div></div>`;}).join('')}</div>`;
   } else {
-    lbl.textContent='Calendario mensual';
+    lbl.textContent='Calendario mensual — clic en un día para ver el detalle';
     const b=periodBounds('month',periodRef),byDay={};
     (allEntries[currentAnalyst]||[]).filter(e=>inRange(e.date,b.start,b.end)).forEach(e=>{byDay[e.date]=(byDay[e.date]||0)+e.mins;});
     const firstDay=parseDate(b.start),lastDay=parseDate(b.end),startDow=(firstDay.getDay()+6)%7,todayStr=today();
     let html='<div class="cal-grid">'+['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'].map(d=>`<div class="cal-hdr">${d}</div>`).join('');
     for(let i=0;i<startDow;i++){const p=new Date(firstDay);p.setDate(firstDay.getDate()-(startDow-i));html+=`<div class="cal-cell other-month"><div class="cal-num">${p.getDate()}</div></div>`;}
-    for(let d=new Date(firstDay);d<=lastDay;d.setDate(d.getDate()+1)){const ds=toISO(new Date(d)),mins=byDay[ds]||0,isT=ds===todayStr,c=mins>480?'#E24B4A':mins>360?'#BA7517':mins>0?'#378ADD':'transparent',pct=mins?Math.min(Math.round(mins/480*100),100):0;html+=`<div class="cal-cell ${isT?'today-cell':''}"><div class="cal-num" style="${isT?'color:var(--blue);font-weight:600':''}">${d.getDate()}</div>${mins?`<div class="cal-bar" style="width:${pct}%;background:${c}"></div><div class="cal-mins">${minsToHM(mins)}</div>`:''}</div>`;}
+    for(let d=new Date(firstDay);d<=lastDay;d.setDate(d.getDate()+1)){
+      const ds=toISO(new Date(d)),mins=byDay[ds]||0,isT=ds===todayStr;
+      const c=mins>480?'#E24B4A':mins>360?'#BA7517':mins>0?'#378ADD':'transparent';
+      const pct=mins?Math.min(Math.round(mins/480*100),100):0;
+      const clickable=mins>0;
+      const clickStyle=clickable?'cursor:pointer;':'';
+      const hoverClass=clickable?'cal-cell-clickable':'';
+      html+=`<div class="cal-cell ${isT?'today-cell':''} ${hoverClass}" style="${clickStyle}" ${clickable?`onclick="jumpToDay('${ds}')"`:''}>
+        <div class="cal-num" style="${isT?'color:var(--blue);font-weight:600':''}">${d.getDate()}</div>
+        ${mins?`<div class="cal-bar" style="width:${pct}%;background:${c}"></div><div class="cal-mins">${minsToHM(mins)}</div>`:''}
+      </div>`;
+    }
     const endDow=(lastDay.getDay()+6)%7;
     if(endDow<6){for(let i=endDow+1;i<=6;i++){const nx=new Date(lastDay);nx.setDate(lastDay.getDate()+(i-endDow));html+=`<div class="cal-cell other-month"><div class="cal-num">${nx.getDate()}</div></div>`;}}
     html+='</div>';
+    html+=`<div style="font-size:11px;color:var(--text3);margin-top:8px">Haz clic en cualquier día con registro para ver el detalle</div>`;
     box.innerHTML=html;
   }
 }
+
+/* ── Jump to day from calendar ── */
+window.jumpToDay=function(dateStr){
+  periodRef=parseDate(dateStr);
+  periodMode='day';
+  ['day','week','month'].forEach(x=>document.getElementById('pbtn-'+x).classList.toggle('active',x==='day'));
+  renderAll();
+  // Smooth scroll to top of page
+  window.scrollTo({top:0,behavior:'smooth'});
+};
 
 function renderMetasViz(entries){
   const metaEntries=entries.filter(e=>e.cat==='meta');
