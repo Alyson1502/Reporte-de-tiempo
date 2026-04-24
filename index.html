@@ -54,6 +54,7 @@ body{font-family:var(--font-sans);background:var(--bg);color:var(--text);min-hei
 .role-badge{font-size:11px;font-weight:500;padding:3px 10px;border-radius:20px}
 .role-analista{background:var(--blue-l);color:var(--blue-d)}
 .role-supervisor{background:var(--green-l);color:var(--green-d)}
+.role-admin{background:var(--purple-l);color:var(--purple-d)}
 .logout-btn{height:30px;padding:0 12px;font-size:12px;background:transparent;border:0.5px solid var(--border2);border-radius:var(--r-md);color:var(--text2);cursor:pointer;font-family:var(--font-sans)}
 .logout-btn:hover{background:var(--surface2)}
 
@@ -402,7 +403,7 @@ select:focus,input:focus{outline:none;border-color:var(--blue)}
       <div class="chart-box">
         <div class="chart-label">Detalle por analista</div>
         <div class="analyst-bar" style="margin-bottom:10px;margin-top:0">
-          <select id="sel-detail-analyst" onchange="renderDetailChart()" style="min-width:160px"></select>
+          <select id="sel-detail-analyst" onchange="renderSupervisor()" style="min-width:160px"></select>
         </div>
         <div class="legend-row" id="detail-legend"></div>
         <div style="position:relative;height:175px"><canvas id="detailPieChart"></canvas></div>
@@ -580,8 +581,8 @@ onAuthStateChanged(auth,async user=>{
     currentUser=user.displayName||user.email;
     currentRole=role;
 
-    if(role==='supervisor'){
-      // Supervisors go straight to the app
+    if(role==='supervisor'||role==='admin'){
+      // Supervisors and admins go straight to the app
       currentAnalyst='';
       document.getElementById('login-screen').style.display='none';
       document.getElementById('profile-screen').style.display='none';
@@ -589,8 +590,8 @@ onAuthStateChanged(auth,async user=>{
       document.getElementById('app').style.display='block';
       document.getElementById('hdr-user').textContent=currentUser;
       document.getElementById('hdr-email').textContent=user.email;
-      document.getElementById('hdr-role').textContent='Supervisor';
-      document.getElementById('hdr-role').className='role-badge role-supervisor';
+      document.getElementById('hdr-role').textContent=role==='admin'?'Administrador':'Supervisor';
+      document.getElementById('hdr-role').className='role-badge '+(role==='admin'?'role-admin':'role-supervisor');
       applyRoleUI();
       await migrateLocalStorage();
       startListeners();
@@ -639,15 +640,23 @@ async function doLogout(){
 };
 
 function applyRoleUI(){
+  const isAdmin=currentRole==='admin';
   const isSup=currentRole==='supervisor';
+  const isAnalista=currentRole==='analista';
+
+  // Add entry / goal forms — only analysts and admins
   const addSec=document.getElementById('add-entry-section');
   if(addSec)addSec.style.display=isSup?'none':'block';
   const addGoalSec=document.getElementById('add-goal-section');
   if(addGoalSec)addGoalSec.style.display=isSup?'none':'block';
+
+  // Config tab — only admin
   const cfgBtn=document.getElementById('tab-config-btn');
-  if(cfgBtn)cfgBtn.style.display=isSup?'none':'';
+  if(cfgBtn)cfgBtn.style.display=isAdmin?'':'none';
+
+  // Analyst selector — supervisor and admin can switch freely; analistas are locked
   const selA=document.getElementById('sel-analyst');
-  if(selA)selA.disabled=!isSup;
+  if(selA)selA.disabled=isAnalista;
 }
 
 /* ── Migrate localStorage → Firebase (one-time) ── */
@@ -729,6 +738,8 @@ window.clearAllData=async function(){
 /* ── Entry CRUD ── */
 window.addEntry=async function(){
   if(currentRole==='supervisor')return;
+  // Analistas can only add to their own profile
+  if(currentRole==='analista'&&currentAnalyst!==document.getElementById('sel-analyst').value)return;
   const desc=document.getElementById('inp-desc').value.trim();
   const cat=document.getElementById('inp-cat').value;
   const date=document.getElementById('inp-date').value;
@@ -743,8 +754,12 @@ window.addEntry=async function(){
   document.getElementById('inp-min').value='';
   document.getElementById('inp-goal-link').value='';
 };
-window.delEntry=async function(id){
+window.delEntry=async function(id,entryAnalyst){
   if(currentRole==='supervisor')return;
+  // Analistas can only delete their own entries
+  if(currentRole==='analista'&&entryAnalyst&&entryAnalyst!==currentAnalyst){
+    alert('Solo puedes eliminar actividades de tu propio perfil.');return;
+  }
   await deleteDoc(doc(db,'entries',id));
 };
 
@@ -865,7 +880,7 @@ function renderList(entries){
       <span class="cat-badge ${CAT[e.cat].badge}">${CAT[e.cat].label}</span>
       <span>${minsToHM(e.mins)}</span>
       ${goalBadge}
-      ${isSup?'':` <button class="del-btn" onclick="delEntry('${e.id}')">×</button>`}
+      ${isSup?'':` <button class="del-btn" onclick="delEntry('${e.id}','${(e.analyst||'').replace(/'/g,"\\'")}')">×</button>`}
     </div>`;
   }).join('');
 }
@@ -1127,7 +1142,14 @@ function showDrillTable(drawerId,titleId,bodyId,entries,title){
 /* ── Config tab ── */
 function renderAnalystList(){
   const el=document.getElementById('analyst-list');if(!el)return;
-  el.innerHTML=analysts.map((a,i)=>`<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid var(--border)"><span class="achip" style="background:${ACHIP[i%ACHIP.length]}"></span><span style="flex:1;font-size:13px">${a}</span><span style="font-size:12px;color:var(--text3)">${(allEntries[a]||[]).length} actividades · ${minsToHM((allEntries[a]||[]).reduce((s,e)=>s+e.mins,0))}</span><button class="btn danger" style="height:28px;font-size:12px" onclick="removeAnalyst('${a.replace(/'/g,"\\'")}')">Eliminar</button></div>`).join('');
+  const isAdmin=currentRole==='admin';
+  el.innerHTML=analysts.map((a,i)=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid var(--border)">
+      <span class="achip" style="background:${ACHIP[i%ACHIP.length]}"></span>
+      <span style="flex:1;font-size:13px">${a}</span>
+      <span style="font-size:12px;color:var(--text3)">${(allEntries[a]||[]).length} actividades · ${minsToHM((allEntries[a]||[]).reduce((s,e)=>s+e.mins,0))}</span>
+      ${isAdmin?`<button class="btn danger" style="height:28px;font-size:12px" onclick="removeAnalyst('${a.replace(/'/g,"\\'")}')">Eliminar</button>`:''}
+    </div>`).join('');
 }
 
 /* ── Init ── */
