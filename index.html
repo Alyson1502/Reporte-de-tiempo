@@ -116,8 +116,8 @@ select:focus,input:focus{outline:none;border-color:var(--blue)}
 
 /* ── Entries list ── */
 .entries-list{max-height:210px;overflow-y:auto;margin-top:8px}
-.entry-row{display:grid;grid-template-columns:0.7fr 1.4fr 0.9fr 0.8fr 1fr 24px;gap:8px;align-items:center;padding:7px 0;border-bottom:0.5px solid var(--border);font-size:13px;color:var(--text)}
-.entry-row.no-del{grid-template-columns:0.7fr 1.4fr 0.9fr 0.8fr 1fr}
+.entry-row{display:grid;grid-template-columns:0.6fr 1fr 1.2fr 0.8fr 0.7fr 1fr 24px;gap:8px;align-items:center;padding:7px 0;border-bottom:0.5px solid var(--border);font-size:13px;color:var(--text)}
+.entry-row.no-del{grid-template-columns:0.6fr 1fr 1.2fr 0.8fr 0.7fr 1fr}
 .cat-badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:500}
 .cat-reunion  {background:var(--blue-l);color:var(--blue-d)}
 .cat-operativa{background:var(--coral-l);color:var(--coral-d)}
@@ -314,8 +314,9 @@ select:focus,input:focus{outline:none;border-color:var(--blue)}
     </div>
     <div class="section" id="add-entry-section">
       <div class="sec-title">Agregar actividad</div>
-      <div class="form-grid">
-        <input type="text" id="inp-desc" placeholder="Descripción..." />
+      <div class="form-grid" style="grid-template-columns:1.2fr 1.2fr 1fr 0.7fr auto">
+        <select id="inp-act-general" style="width:100%"></select>
+        <input type="text" id="inp-desc" placeholder="Detalle (opcional)..." />
         <select id="inp-cat">
           <option value="reunion">Reuniones / llamadas</option>
           <option value="operativa">Tareas operativas</option>
@@ -323,14 +324,22 @@ select:focus,input:focus{outline:none;border-color:var(--blue)}
           <option value="meta">Proyectos / metas</option>
         </select>
         <input type="date" id="inp-date" style="width:100%"/>
-        <input type="number" id="inp-min" placeholder="Minutos" min="5" max="480" step="5" style="width:100%"/>
+        <input type="number" id="inp-min" placeholder="Min" min="5" max="480" step="5" style="width:100%"/>
         <button class="btn" onclick="addEntry()">+ Agregar</button>
       </div>
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
         <span style="font-size:12px;color:var(--text2);white-space:nowrap">Ligar a meta:</span>
         <select id="inp-goal-link" style="flex:1;height:32px;font-size:12px">
           <option value="">— Sin meta asociada —</option>
         </select>
+        <button class="btn" id="btn-new-act" style="height:32px;font-size:12px;white-space:nowrap">+ Nueva actividad</button>
+      </div>
+      <div id="new-act-form" style="display:none;background:var(--surface2);border-radius:var(--r-md);padding:10px;margin-bottom:8px;display:none">
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="text" id="inp-new-act-name" placeholder="Nombre de la nueva actividad general..." style="flex:1;height:32px;font-size:12px"/>
+          <button class="btn" style="height:32px;font-size:12px" onclick="saveNewActivity()">Guardar</button>
+          <button class="btn" style="height:32px;font-size:12px" onclick="document.getElementById('new-act-form').style.display='none'">Cancelar</button>
+        </div>
       </div>
       <div class="entries-list" id="entries-list"><div class="empty-msg">Sin actividades en este período.</div></div>
     </div>
@@ -500,14 +509,16 @@ const DAYS=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
 const MONTHS=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
 /* ── State ── */
-let analysts=[],allEntries={},allGoals={};
+let analysts=[],allEntries={},allGoals={},activities=[];
 let currentAnalyst='';
 let currentUser='',currentRole='';
 let periodMode='month',periodRef=new Date();
 let supPeriodMode='month',supPeriodRef=new Date();
 let indCatFilter='';
 let pieChart=null,barChart=null,supBarChart=null,detailPieChart=null;
-let unsubEntries=null,unsubGoals=null,unsubAnalysts=null;
+let unsubEntries=null,unsubGoals=null,unsubAnalysts=null,unsubActivities=null;
+
+const BASE_ACTIVITIES=['Informe / Reporte','Reunión','Análisis de datos','Revisión de documentos','Capacitación','Coordinación','Trabajo de campo'];
 
 /* ── Helpers ── */
 const minsToHM=m=>{const h=Math.floor(m/60),mn=m%60;return h+'h '+(mn<10?'0':'')+mn+'m';};
@@ -698,7 +709,11 @@ function startListeners(){
     renderAll();
     if(document.getElementById('tab-supervisor').style.display!=='none')renderSupervisor();
   },()=>syncState('error'));
-  unsubGoals=onSnapshot(collection(db,'goals'),snap=>{
+  unsubActivities=onSnapshot(collection(db,'activities'),snap=>{
+    const custom=snap.docs.map(d=>d.data().name).filter(Boolean).sort();
+    activities=[...BASE_ACTIVITIES,...custom.filter(c=>!BASE_ACTIVITIES.includes(c))];
+    populateActivitySelector();
+  },()=>{activities=[...BASE_ACTIVITIES];populateActivitySelector();});
     analysts.forEach(a=>allGoals[a]=[]);
     snap.docs.forEach(d=>{const g={id:d.id,...d.data()};if(!allGoals[g.analyst])allGoals[g.analyst]=[];allGoals[g.analyst].push(g);});
     if(document.getElementById('tab-metas').style.display!=='none'){renderMetasTab();renderSupGoals();}
@@ -708,7 +723,8 @@ function stopListeners(){
   if(unsubAnalysts)unsubAnalysts();
   if(unsubEntries)unsubEntries();
   if(unsubGoals)unsubGoals();
-  unsubAnalysts=unsubEntries=unsubGoals=null;
+  if(unsubActivities)unsubActivities();
+  unsubAnalysts=unsubEntries=unsubGoals=unsubActivities=null;
 }
 
 /* ── Analyst CRUD ── */
@@ -738,18 +754,18 @@ window.clearAllData=async function(){
 /* ── Entry CRUD ── */
 window.addEntry=async function(){
   if(currentRole==='supervisor')return;
-  // Analistas can only add to their own profile
   if(currentRole==='analista'&&currentAnalyst!==document.getElementById('sel-analyst').value)return;
+  const actGeneral=document.getElementById('inp-act-general').value;
   const desc=document.getElementById('inp-desc').value.trim();
   const cat=document.getElementById('inp-cat').value;
   const date=document.getElementById('inp-date').value;
   const mins=parseInt(document.getElementById('inp-min').value);
   const goalId=document.getElementById('inp-goal-link').value||null;
-  if(!desc||isNaN(mins)||mins<=0||!date){
-    const i=document.getElementById('inp-desc');i.style.borderColor='#E24B4A';setTimeout(()=>i.style.borderColor='',1500);return;
+  if(!actGeneral||isNaN(mins)||mins<=0||!date){
+    const i=document.getElementById('inp-act-general');i.style.borderColor='#E24B4A';setTimeout(()=>i.style.borderColor='',1500);return;
   }
   const id='e_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
-  await setDoc(doc(db,'entries',id),{analyst:currentAnalyst,desc,cat,date,mins,goalId,createdAt:Date.now()});
+  await setDoc(doc(db,'entries',id),{analyst:currentAnalyst,actGeneral,desc,cat,date,mins,goalId,createdAt:Date.now()});
   document.getElementById('inp-desc').value='';
   document.getElementById('inp-min').value='';
   document.getElementById('inp-goal-link').value='';
@@ -817,7 +833,23 @@ window.switchAnalyst=function(){
   updateGoalSelector();renderAll();
 };
 
-/* ── Goal selector in form ── */
+function populateActivitySelector(){
+  const sel=document.getElementById('inp-act-general');
+  if(!sel)return;
+  const cur=sel.value;
+  sel.innerHTML=(activities.length?activities:[...BASE_ACTIVITIES])
+    .map(a=>`<option value="${a}">${a}</option>`).join('');
+  if(cur&&activities.includes(cur))sel.value=cur;
+}
+
+window.saveNewActivity=async function(){
+  const name=document.getElementById('inp-new-act-name').value.trim();
+  if(!name)return;
+  if(activities.includes(name)){alert('Esa actividad ya existe.');return;}
+  await setDoc(doc(db,'activities','act_'+Date.now()),{name,created:Date.now()});
+  document.getElementById('inp-new-act-name').value='';
+  document.getElementById('new-act-form').style.display='none';
+};
 window.updateGoalSelector=function(){
   const date=document.getElementById('inp-date')?document.getElementById('inp-date').value:'';
   const month=date?date.slice(0,7):today().slice(0,7);
@@ -871,12 +903,21 @@ function renderList(entries){
   const isSup=currentRole==='supervisor';
   const sorted=[...entries].sort((a,b)=>b.date.localeCompare(a.date));
   if(!sorted.length){el.innerHTML='<div class="empty-msg">Sin actividades en este período.</div>';return;}
-  el.innerHTML=sorted.map(e=>{
+  // Header
+  el.innerHTML=`<div style="display:grid;grid-template-columns:0.6fr 1fr 1.2fr 0.8fr 0.7fr 1fr ${isSup?'':'24px'};gap:8px;padding:4px 0;border-bottom:0.5px solid var(--border2)">
+    ${['Fecha','Actividad','Detalle','Categoría','Tiempo','Meta'].map(h=>`<span style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">${h}</span>`).join('')}${isSup?'':'<span></span>'}
+  </div>`+
+  sorted.map(e=>{
     const goal=e.goalId?(allGoals[currentAnalyst]||[]).find(g=>g.id===e.goalId):null;
-    const goalBadge=goal?`<span style="font-size:11px;color:var(--purple-d);background:var(--purple-l);padding:2px 7px;border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${goal.name}">⬡ ${goal.name.length>16?goal.name.slice(0,16)+'…':goal.name}</span>`:`<span style="font-size:11px;color:var(--text3)">—</span>`;
+    const goalBadge=goal
+      ?`<span style="font-size:11px;color:var(--purple-d);background:var(--purple-l);padding:2px 7px;border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${goal.name}">⬡ ${goal.name.length>14?goal.name.slice(0,14)+'…':goal.name}</span>`
+      :`<span style="font-size:11px;color:var(--text3)">—</span>`;
+    const actGen=e.actGeneral||e.desc||'—';
+    const detail=e.desc&&e.actGeneral&&e.desc!==e.actGeneral?e.desc:'—';
     return `<div class="entry-row${isSup?' no-del':''}">
       <span style="font-size:12px;color:var(--text2)">${fmtDate(e.date)}</span>
-      <span>${e.desc}</span>
+      <span style="font-weight:500">${actGen}</span>
+      <span style="font-size:12px;color:var(--text2)">${detail}</span>
       <span class="cat-badge ${CAT[e.cat].badge}">${CAT[e.cat].label}</span>
       <span>${minsToHM(e.mins)}</span>
       ${goalBadge}
@@ -908,25 +949,38 @@ function renderCharts(entries){
   document.getElementById('pie-legend').innerHTML=cats.map((c,i)=>`<span style="display:flex;align-items:center;gap:4px"><span class="ldot" style="background:${colors[i]}"></span>${labels[i]} ${Math.round(vals[i]/total*100)}%</span>`).join('');
   if(pieChart)pieChart.destroy();
   pieChart=new Chart(document.getElementById('pieChart'),{type:'doughnut',data:{labels,datasets:[{data:vals,backgroundColor:colors,borderWidth:2,borderColor:'#ffffff'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.label+': '+minsToHM(ctx.raw)}}}}});
+
+  // Bar chart grouped by actividadGeneral with category breakdown in tooltip
   if(barChart)barChart.destroy();
-  const byDesc={},colorOf={},fullDesc={};
+  const byAct={},catByAct={};
   entries.forEach(e=>{
-    const k=e.desc.length>22?e.desc.slice(0,22)+'…':e.desc;
-    byDesc[k]=(byDesc[k]||0)+e.mins;
-    colorOf[k]=CAT[e.cat].color;
-    fullDesc[k]=e.desc; // store full description for tooltip
+    const k=e.actGeneral||e.desc||'Sin clasificar';
+    byAct[k]=(byAct[k]||0)+e.mins;
+    if(!catByAct[k])catByAct[k]={reunion:0,operativa:0,reporte:0,meta:0};
+    catByAct[k][e.cat]=(catByAct[k][e.cat]||0)+e.mins;
   });
-  const bL=Object.keys(byDesc),bV=Object.values(byDesc);
-  document.getElementById('bar-wrap').style.height=Math.max(200,bL.length*38+60)+'px';
+  // Sort by total time descending
+  const sorted=Object.entries(byAct).sort((a,b)=>b[1]-a[1]);
+  const bL=sorted.map(x=>x[0]),bV=sorted.map(x=>x[1]);
+  // Color by dominant category
+  const domColor=bL.map(k=>{const cb=catByAct[k];const dom=Object.entries(cb).sort((a,b)=>b[1]-a[1])[0];return CAT[dom[0]]?.color||'#888780';});
+  document.getElementById('bar-wrap').style.height=Math.max(200,bL.length*42+60)+'px';
   barChart=new Chart(document.getElementById('barChart'),{
     type:'bar',
-    data:{labels:bL,datasets:[{data:bV,backgroundColor:bL.map(l=>colorOf[l]),borderRadius:4,borderSkipped:false}]},
+    data:{labels:bL,datasets:[{data:bV,backgroundColor:domColor,borderRadius:4,borderSkipped:false}]},
     options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
       plugins:{
         legend:{display:false},
         tooltip:{callbacks:{
-          title:ctx=>fullDesc[ctx[0].label]||ctx[0].label,
-          label:ctx=>minsToHM(ctx.raw)
+          title:ctx=>ctx[0].label,
+          label:ctx=>{
+            const cb=catByAct[ctx.label]||{};
+            const lines=['Total: '+minsToHM(ctx.raw),'─────────────'];
+            Object.entries(cb).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]).forEach(([c,v])=>{
+              lines.push(CAT[c].label+': '+minsToHM(v));
+            });
+            return lines;
+          }
         }}
       },
       scales:{
@@ -1004,17 +1058,53 @@ window.jumpToDay=function(dateStr){
 };
 
 function renderMetasViz(entries){
-  const metaEntries=entries.filter(e=>e.cat==='meta');
   const el=document.getElementById('metas-viz');
-  if(!metaEntries.length){el.innerHTML='<div class="empty-msg">Sin actividades de tipo "Proyectos / metas".</div>';return;}
+  // All entries linked to a goal (any category)
+  const linkedEntries=entries.filter(e=>e.goalId);
+  const unlinkedMeta=entries.filter(e=>e.cat==='meta'&&!e.goalId);
+  if(!linkedEntries.length&&!unlinkedMeta.length){el.innerHTML='<div class="empty-msg">Sin actividades ligadas a metas en este período.</div>';return;}
   const totalUsado=entries.reduce((s,e)=>s+e.mins,0);
   const days=Math.max(new Set(entries.map(e=>e.date)).size,1);
   const cap=periodMode==='day'?480:days*480;
-  const metaTotal=metaEntries.reduce((s,e)=>s+e.mins,0);
-  const pctMeta=Math.round(metaTotal/cap*100);
-  const porNombre={};
-  metaEntries.forEach(e=>{porNombre[e.desc]=(porNombre[e.desc]||0)+e.mins;});
-  el.innerHTML=Object.entries(porNombre).map(([name,mins])=>{const p=Math.min(Math.round(mins/cap*100),100);return`<div class="meta-row"><span style="font-size:13px;color:var(--text);flex:1">${name.length>26?name.slice(0,26)+'…':name}</span><div class="meta-prog"><div class="meta-fill" style="width:${p}%;background:#7F77DD"></div></div><span style="font-size:12px;color:var(--text2);min-width:45px;text-align:right">${minsToHM(mins)}</span></div>`;}).join('')+`<div style="font-size:12px;color:var(--text3);margin-top:8px;border-top:0.5px solid var(--border);padding-top:8px">${pctMeta}% del período en metas${totalUsado>cap?'<br><span style="color:var(--red-t)">La carga operativa desplaza tiempo de proyectos estratégicos.</span>':''}</div>`;
+
+  // Group by goal
+  const byGoal={};
+  const goals=allGoals[currentAnalyst]||[];
+  linkedEntries.forEach(e=>{
+    if(!byGoal[e.goalId])byGoal[e.goalId]={mins:0,byCat:{reunion:0,operativa:0,reporte:0,meta:0}};
+    byGoal[e.goalId].mins+=e.mins;
+    byGoal[e.goalId].byCat[e.cat]=(byGoal[e.goalId].byCat[e.cat]||0)+e.mins;
+  });
+
+  const totalMeta=Object.values(byGoal).reduce((s,g)=>s+g.mins,0)+(unlinkedMeta.reduce((s,e)=>s+e.mins,0));
+  const pctMeta=Math.round(totalMeta/cap*100);
+
+  let html=Object.entries(byGoal).map(([gid,data])=>{
+    const goal=goals.find(g=>g.id===gid);
+    const name=goal?goal.name:gid;
+    const p=Math.min(Math.round(data.mins/cap*100),100);
+    const catBreakdown=Object.entries(data.byCat).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1])
+      .map(([c,v])=>`<span style="font-size:11px;color:var(--text2);background:var(--surface2);padding:1px 6px;border-radius:3px;border-left:3px solid ${CAT[c].color}">${CAT[c].label}: ${minsToHM(v)}</span>`).join('');
+    return `<div style="margin-bottom:12px">
+      <div class="meta-row">
+        <span style="font-size:13px;color:var(--text);flex:1;font-weight:500">${name.length>28?name.slice(0,28)+'…':name}</span>
+        <div class="meta-prog"><div class="meta-fill" style="width:${p}%;background:#7F77DD"></div></div>
+        <span style="font-size:12px;color:var(--text2);min-width:45px;text-align:right">${minsToHM(data.mins)}</span>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">${catBreakdown}</div>
+    </div>`;
+  }).join('');
+
+  if(unlinkedMeta.length){
+    const um=unlinkedMeta.reduce((s,e)=>s+e.mins,0);
+    html+=`<div class="meta-row" style="opacity:.7"><span style="font-size:12px;color:var(--text2);flex:1">Otras actividades de metas (sin ligar)</span><span style="font-size:12px;color:var(--text2)">${minsToHM(um)}</span></div>`;
+  }
+
+  html+=`<div style="font-size:12px;color:var(--text3);margin-top:10px;border-top:0.5px solid var(--border);padding-top:8px">
+    ${pctMeta}% del período invertido en metas (todas las categorías)
+    ${totalUsado>cap?'<br><span style="color:var(--red-t)">La carga operativa desplaza tiempo de proyectos estratégicos.</span>':''}
+  </div>`;
+  el.innerHTML=html;
 }
 
 /* ── Goals tab ── */
@@ -1156,6 +1246,12 @@ function renderAnalystList(){
 document.getElementById('inp-date').value=today();
 document.getElementById('inp-date').addEventListener('change',updateGoalSelector);
 
+// Wire "Nueva actividad" toggle button
+document.getElementById('btn-new-act').addEventListener('click',()=>{
+  const f=document.getElementById('new-act-form');
+  f.style.display=f.style.display==='none'||f.style.display===''?'block':'none';
+});
+
 // Wire buttons from module (avoids "not defined" errors with type=module)
 document.getElementById('btn-google-signin').addEventListener('click',async()=>{
   document.getElementById('login-err').classList.remove('show');
@@ -1173,6 +1269,9 @@ document.getElementById('btn-app-logout').addEventListener('click',doLogout);
 
 const firstCatBtn=document.querySelector('.cat-f-btn[data-cat=""]');
 if(firstCatBtn){firstCatBtn.classList.add('active');firstCatBtn.style.background='#888780';firstCatBtn.style.color='#fff';}
+// Pre-populate activity selector with base list before Firebase loads
+activities=[...BASE_ACTIVITIES];
+populateActivitySelector();
 // onAuthStateChanged handles the login flow automatically
 </script>
 </body>
