@@ -714,6 +714,7 @@ function startListeners(){
     activities=[...BASE_ACTIVITIES,...custom.filter(c=>!BASE_ACTIVITIES.includes(c))];
     populateActivitySelector();
   },()=>{activities=[...BASE_ACTIVITIES];populateActivitySelector();});
+  unsubGoals=onSnapshot(collection(db,'goals'),snap=>{
     analysts.forEach(a=>allGoals[a]=[]);
     snap.docs.forEach(d=>{const g={id:d.id,...d.data()};if(!allGoals[g.analyst])allGoals[g.analyst]=[];allGoals[g.analyst].push(g);});
     if(document.getElementById('tab-metas').style.display!=='none'){renderMetasTab();renderSupGoals();}
