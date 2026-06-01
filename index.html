@@ -337,8 +337,8 @@ select:focus,input:focus{outline:none;border-color:var(--blue)}
       <div id="new-act-form" style="display:none;background:var(--surface2);border-radius:var(--r-md);padding:10px;margin-bottom:8px;display:none">
         <div style="display:flex;gap:8px;align-items:center">
           <input type="text" id="inp-new-act-name" placeholder="Nombre de la nueva actividad general..." style="flex:1;height:32px;font-size:12px"/>
-          <button class="btn" style="height:32px;font-size:12px" onclick="saveNewActivity()">Guardar</button>
-          <button class="btn" style="height:32px;font-size:12px" onclick="document.getElementById('new-act-form').style.display='none'">Cancelar</button>
+          <button class="btn" id="btn-save-new-act" style="height:32px;font-size:12px">Guardar</button>
+          <button class="btn" id="btn-cancel-new-act" style="height:32px;font-size:12px">Cancelar</button>
         </div>
       </div>
       <div class="entries-list" id="entries-list"><div class="empty-msg">Sin actividades en este período.</div></div>
@@ -843,14 +843,6 @@ function populateActivitySelector(){
   if(cur&&activities.includes(cur))sel.value=cur;
 }
 
-window.saveNewActivity=async function(){
-  const name=document.getElementById('inp-new-act-name').value.trim();
-  if(!name)return;
-  if(activities.includes(name)){alert('Esa actividad ya existe.');return;}
-  await setDoc(doc(db,'activities','act_'+Date.now()),{name,created:Date.now()});
-  document.getElementById('inp-new-act-name').value='';
-  document.getElementById('new-act-form').style.display='none';
-};
 window.updateGoalSelector=function(){
   const date=document.getElementById('inp-date')?document.getElementById('inp-date').value:'';
   const month=date?date.slice(0,7):today().slice(0,7);
@@ -1251,6 +1243,18 @@ document.getElementById('inp-date').addEventListener('change',updateGoalSelector
 document.getElementById('btn-new-act').addEventListener('click',()=>{
   const f=document.getElementById('new-act-form');
   f.style.display=f.style.display==='none'||f.style.display===''?'block':'none';
+});
+document.getElementById('btn-save-new-act').addEventListener('click',async()=>{
+  const name=document.getElementById('inp-new-act-name').value.trim();
+  if(!name)return;
+  if(activities.includes(name)){alert('Esa actividad ya existe.');return;}
+  await setDoc(doc(db,'activities','act_'+Date.now()),{name,created:Date.now()});
+  document.getElementById('inp-new-act-name').value='';
+  document.getElementById('new-act-form').style.display='none';
+});
+document.getElementById('btn-cancel-new-act').addEventListener('click',()=>{
+  document.getElementById('inp-new-act-name').value='';
+  document.getElementById('new-act-form').style.display='none';
 });
 
 // Wire buttons from module (avoids "not defined" errors with type=module)
